@@ -98,13 +98,13 @@ def handle_session_errors(cleanup_keys=None, on_error_callback=None):
                     on_error_callback(e)
             except DBError as e:
                 cleanup_session_state(cleanup_keys)
-                logging.error(f"Database error: {e}")
+                logging.error("Database error in session handler")
                 st.error("Something went wrong. Please try again later.")
                 if on_error_callback:
                     on_error_callback(e)
             except Exception as e:
                 cleanup_session_state(cleanup_keys)
-                logging.exception("Unexpected error in handler")
+                logging.error(f"Unexpected error in handler: {type(e).__name__}")
                 st.error("Something went wrong. Please try again later.")
                 if on_error_callback:
                     on_error_callback(e)
@@ -140,7 +140,7 @@ def handle_bot_errors(error_container=None):
                 return False
             except Exception as e:
                 container = error_container or st
-                logging.exception("Unexpected error in bot handler")
+                logging.error(f"Unexpected error in bot handler: {type(e).__name__}")
                 container.error("Something went wrong. Please try again later.")
                 return False
         return wrapper

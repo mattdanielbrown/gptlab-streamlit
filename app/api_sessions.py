@@ -60,7 +60,7 @@ class sessions:
         try:
             bot_response = self.get_session_response(session_id=new_session['session_id'], oai_api_key=oai_api_key)
         except OpenAIError as e:
-            logging.warning(f"Newly created session {new_session['session_id']} status SYSTEM_ABANDONED_OPENAI | OpenAIError | Exception: {e}")
+            logging.warning(f"Session {new_session['session_id']} abandoned: {type(e).__name__}")
             self.end_session(session_id=new_session['session_id'], end_status=self.SessionStatus.SYSTEM_ABANDONED_OPENAI.value)
             raise
 
@@ -70,7 +70,7 @@ class sessions:
                 self.db.increment_document_fields(collection_name="users", document_id=user_id, field_name='sessions_started', increment=1)
                 self.db.increment_document_fields(collection_name="bots", document_id=bot_id, field_name='sessions_started', increment=1)
             except DBError:
-                logging.debug("Failed to increment session stats, continuing anyway")
+                pass  # Non-critical stat increment, continue silently
 
         return {
             'session_info': new_session,
@@ -121,10 +121,8 @@ class sessions:
                 content_moderation_check = o.get_moderation(user_message=user_message)
                 current_session_messages.append({'role':'user','message':user_message,'created_date':gu.get_current_time()})
             except OpenAIError as e:
-                if e.error_type == "RateLimitError":
-                    logging.warning(f"Session {session_id} moderation check impacted due to OpenAI rate limit | OpenAIError | Exception: {e}")
-                else:
-                    logging.warning(f"Session {session_id} status SYSTEM_ABANDONED_OPENAI | OpenAIError | Exception: {e}")
+                if e.error_type != "RateLimitError":
+                    logging.warning(f"Session {session_id} abandoned: {type(e).__name__}")
                     self.end_session(session_id=session_id, end_status=self.SessionStatus.SYSTEM_ABANDONED_OPENAI.value)
                 raise
 
@@ -137,10 +135,8 @@ class sessions:
                 session_type=current_session['data']['bot_session_type']
             )
         except OpenAIError as e:
-            if e.error_type == "RateLimitError":
-                logging.warning(f"Session {session_id} response impacted due to OpenAI rate limit | OpenAIError | Exception: {e}")
-            else:
-                logging.warning(f"Session {session_id} status SYSTEM_ABANDONED_OPENAI | OpenAIError | Exception: {e}")
+            if e.error_type != "RateLimitError":
+                logging.warning(f"Session {session_id} abandoned: {type(e).__name__}")
                 self.end_session(session_id=session_id, end_status=self.SessionStatus.SYSTEM_ABANDONED_OPENAI.value)
             raise
 
@@ -170,7 +166,7 @@ class sessions:
         record_status = self.db.update_document_fields(collection_name="sessions", document_id=session_id, updates=status_update)
 
         if record_status == None:
-            logging.warning(f"Session {session_id} status SYSTEM_ABANDONED | SessionAttributeNotUpdated | Exception: Session status {end_status} not set accordingly")
+            logging.warning(f"Session {session_id} status update failed")
             self.end_session(session_id=session_id, end_status=self.SessionStatus.SYSTEM_ABANDONED.value)
             raise RecordUpdateError("Session status not changed accordingly")
 
@@ -180,7 +176,7 @@ class sessions:
                 self.db.increment_document_fields(collection_name="users", document_id=current_session['data']['user_id'], field_name='sessions_ended', increment=1)
                 self.db.increment_document_fields(collection_name="bots", document_id=current_session['data']['bot_id'], field_name='sessions_ended', increment=1)
             except DBError:
-                logging.debug("Failed to increment session end stats, continuing anyway")
+                pass  # Non-critical stat increment, continue silently
 
         return True
 
@@ -335,7 +331,7 @@ class sessions:
         try:
             self.db.increment_document_fields(collection_name="sessions", document_id=session_id, field_name='message_count', increment=1)
         except DBError:
-            logging.debug("Failed to increment message count, continuing anyway")
+            pass  # Non-critical stat increment, continue silently
 
         return True
 

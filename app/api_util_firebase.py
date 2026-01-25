@@ -33,7 +33,7 @@ class firestore_db:
                     return doc
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore get_doc failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore get_doc failed: {collection_name}/{document_id}")
                     raise DBError(f"Database operation failed: {collection_name}/{document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -78,7 +78,7 @@ class firestore_db:
                 raise
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore get_sub_collection_items failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore get_sub_collection_items failed: {collection_name}/{document_id}/{sub_collection_name}")
                     raise DBError(f"Database operation failed: {collection_name}/{document_id}/{sub_collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -114,7 +114,7 @@ class firestore_db:
                 raise
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore get_sub_collection_item failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore get_sub_collection_item failed: {collection_name}/{document_id}/{sub_collection_name}/{sub_document_id}")
                     raise DBError(f"Database operation failed: {collection_name}/{document_id}/{sub_collection_name}/{sub_document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -175,7 +175,7 @@ class firestore_db:
                 return docs
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore get_docs failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore get_docs failed: {collection_name}")
                     raise DBError(f"Database query failed: {collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -201,7 +201,7 @@ class firestore_db:
                 return True
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore increment_document_fields failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore increment_document_fields failed: {collection_name}/{document_id}/{field_name}")
                     raise DBError(f"Database increment failed: {collection_name}/{document_id}/{field_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -224,7 +224,7 @@ class firestore_db:
                 return True
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore update_document_fields failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore update_document_fields failed: {collection_name}/{document_id}")
                     raise DBError(f"Database update failed: {collection_name}/{document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -247,7 +247,7 @@ class firestore_db:
                 return doc_ref.id
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore create_doc failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore create_doc failed: {collection_name}")
                     raise DBError(f"Database create failed: {collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
@@ -268,7 +268,7 @@ class firestore_db:
                 return item_ref.id
             except Exception as e:
                 if tries >= max_tries:
-                    logging.error(f"Firestore create_sub_collection_item failed after {max_tries} retries: {e}")
+                    logging.error(f"Firestore create_sub_collection_item failed: {collection_name}/{document_id}/{sub_collection_name}")
                     raise DBError(f"Database create failed: {collection_name}/{document_id}/{sub_collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
