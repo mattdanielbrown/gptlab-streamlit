@@ -134,29 +134,96 @@ To use the app, you will need an OpenAI API key. Don't have one yet? Create one 
 
 For optimal chatting experience, we recommend using a pay-as-you-go API key. (Free trial API keys are limited to 3 requests a minute, not enough to chat with assistants.) You will need to enter your billing information [here](https://platform.openai.com/account/billing/overview). You can learn more about OpenAI API rate limits [here](https://platform.openai.com/docs/guides/rate-limits/overview).
 
-## Running the app locally 
+## Running the app locally
 
-To run the app locally, you will need to: 
+To run the app locally, you will need to:
 
-1. Set up your own [Google Firestore](https://firebase.google.com/docs/firestore) database. 
-    - GPT Lab uses four main collections: `users`, `user_hash`, `bots`, and `sessions`.
-    - You will need to manually set up a `users` collection before you can run the app locally. (All other collections will be set up by the app). 
-2. Clone this repository
-3. Create a .streamlit/secrets.toml file containing the following:
+### 1. Set up your Google Firestore database
+
+GPT Lab uses four main collections: `users`, `user_hash`, `bots`, and `sessions`.
+
+**Important:** You must manually create the following collections before running the app:
+
+1. Go to the [Firebase Console](https://console.firebase.google.com/) and create a new project (or use an existing one)
+2. Navigate to **Firestore Database** and click **Create database**
+3. Create the required collections:
+   - Click **Start collection** and create a collection named `users`
+   - Add at least one document (you can use auto-ID and add any field, e.g., `placeholder: true`)
+   - Repeat the process to create a `sessions` collection with at least one document
+
+   **Note:** The `user_hash` and `bots` collections will be created automatically by the app, but `users` and `sessions` must exist beforehand.
+
+### 2. Generate and configure your service account credentials
+
+1. In the Firebase Console, go to **Project Settings** (gear icon) > **Service accounts**
+2. Click **Generate new private key** to download a JSON file
+3. Convert the JSON to TOML format for Streamlit secrets (see below)
+
+**Converting JSON credentials to TOML:**
+
+Your downloaded JSON file will look something like this:
+```json
+{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "abc123...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com",
+  "client_id": "123456789",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
+}
 ```
-[firestore]
-db-key = "YOUR GOOGLE SERVICE ACCOUNT TOML"
+
+Convert it to TOML format in `.streamlit/secrets.toml`:
+```toml
+[firestore.db-key]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "abc123..."
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com"
+client_id = "123456789"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 
 [util]
-global_salt = "OPTIONAL GLOBAL SALT"
+global_salt = "your-optional-global-salt-for-encryption"
 ```
 
-- You will need to generate a service account JSON and convert that JSON file to TOML. Follow the instructions [here](https://blog.streamlit.io/streamlit-firestore-continued/). 
+**Important notes for the TOML conversion:**
+- Each JSON key becomes a TOML key under the `[firestore.db-key]` section
+- String values must be wrapped in double quotes
+- The `private_key` value contains literal `\n` characters - keep them as-is in the TOML string
 
-4. In your terminal, set up your local environment: 
-    - Set up a Python virtual environment (using `venv`, `conda`, `virtualenv`, or any other tool you prefer)
-    - Install the required Python dependencies (`pip install -r app/requirements.txt`)
-    - Run `streamlit run app/home.py`
+For more details on Streamlit Firestore integration, see the [Streamlit blog tutorial](https://blog.streamlit.io/streamlit-firestore-continued/).
+
+### 3. Clone this repository
+
+```bash
+git clone https://github.com/dclin/gptlab-streamlit.git
+cd gptlab-streamlit
+```
+
+### 4. Set up your local environment
+
+```bash
+# Set up a Python virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r app/requirements.txt
+
+# Run the app
+streamlit run app/home.py
+```
+
+The app should now be running at `http://localhost:8501`.
 
 ## Contributions
 Contributions are welcomed. Simply open up an issue and create a pull request. If you are introducing new features, please provide a detailed description of the specific use case you are addressing and set up instructions to test. 
