@@ -1,23 +1,19 @@
+import streamlit as st
+
 def switch_page(page_name: str):
-    from streamlit.runtime.scriptrunner import RerunData, RerunException
-    from streamlit.source_util import get_pages
+    """Switch to a different page in the Streamlit app."""
+    # Map page names to their file paths
+    page_mapping = {
+        "lounge": "pages/1_lounge.py",
+        "assistant": "pages/2_assistant.py",
+        "lab": "pages/3_lab.py",
+        "faq": "pages/4_faq.py",
+        "terms": "pages/5_terms.py",
+    }
 
-    def standardize_name(name: str) -> str:
-        return name.lower().replace("_", " ")
+    page_name_lower = page_name.lower().replace("_", " ")
 
-    page_name = standardize_name(page_name)
-
-    pages = get_pages("home.py")  # OR whatever your main page is called
-
-    for page_hash, config in pages.items():
-        if standardize_name(config["page_name"]) == page_name:
-            raise RerunException(
-                RerunData(
-                    page_script_hash=page_hash,
-                    page_name=page_name,
-                )
-            )
-
-    page_names = [standardize_name(config["page_name"]) for config in pages.values()]
-
-    raise ValueError(f"Could not find page {page_name}. Must be one of {page_names}")
+    if page_name_lower in page_mapping:
+        st.switch_page(page_mapping[page_name_lower])
+    else:
+        raise ValueError(f"Could not find page {page_name}. Must be one of {list(page_mapping.keys())}")
