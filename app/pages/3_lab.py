@@ -356,7 +356,7 @@ def handle_lab_restart():
         'lab_model_index', 'lab_model_personality_index', 'lab_model_max_tokens_input'
     ])
     st.session_state.lab_active_step = 1
-    st.experimental_rerun()
+    st.rerun()
 
 
 def _on_lab_error(e):
