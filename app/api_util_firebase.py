@@ -1,7 +1,9 @@
-import json 
-import time 
-from google.cloud import firestore 
-import streamlit as st 
+import json
+import time
+import logging
+from google.cloud import firestore
+import streamlit as st
+from exceptions import DBError
 
 db_key_dict = json.loads(st.secrets["firestore"]["db-key"])
 
@@ -12,11 +14,11 @@ class firestore_db:
     def get_doc(self, collection_name, document_id, field_names=None, return_reference_only=None, max_tries=3, initial_backoff=1):
         doc_ref = self.db.collection(collection_name).document(document_id)
         tries = 0
-        backoff = initial_backoff 
+        backoff = initial_backoff
         while True:
             try:
                 if not doc_ref.get().exists:
-                    return None 
+                    return None
                 if return_reference_only == True:
                     return doc_ref
                 else:
@@ -29,9 +31,10 @@ class firestore_db:
                             if doc_ref.get().get(field_name):
                                 doc["data"][field_name] = doc_ref.get().get(field_name)
                     return doc
-            except:
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore get_doc failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database operation failed: {collection_name}/{document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -71,9 +74,12 @@ class firestore_db:
                     sub_collection_items.append(sub_doc)
 
                 return sub_collection_items
-            except:
+            except DBError:
+                raise
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore get_sub_collection_items failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database operation failed: {collection_name}/{document_id}/{sub_collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -83,16 +89,16 @@ class firestore_db:
         doc_ref = self.get_doc(collection_name=collection_name, document_id=document_id, return_reference_only=True, max_tries=max_tries, initial_backoff=initial_backoff)
 
         if not doc_ref.get().exists:
-            return None 
+            return None
 
         tries = 0
-        backoff = initial_backoff 
+        backoff = initial_backoff
         while True:
             try:
                 sub_doc_ref = doc_ref.collection(sub_collection_name).document(sub_document_id)
 
                 if not sub_doc_ref.get().exists:
-                    return None 
+                    return None
 
                 sub_doc = {"id": sub_document_id}
 
@@ -103,34 +109,37 @@ class firestore_db:
                     for field_name in field_names:
                         if sub_doc_ref.get().get(field_name):
                             sub_doc["data"][field_name] = sub_doc_ref.get().get(field_name)
-                return sub_doc 
-            except:
+                return sub_doc
+            except DBError:
+                raise
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore get_sub_collection_item failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database operation failed: {collection_name}/{document_id}/{sub_collection_name}/{sub_document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
 
-    # get a list of documents within a collection 
+    # get a list of documents within a collection
     # query_filters: query_filters = [ ("is_active", "==", True)]
     # field_names: field_names = ['name','is_active']
-    # example: 
+    # example:
     def get_docs(
-            self, 
-            collection_name, 
-            query_filters=None, 
-            field_names=None, 
-            order_by_field=None, 
-            order_by_direction='ASCENDING', 
-            limit=None, 
-            max_tries=3, 
+            self,
+            collection_name,
+            query_filters=None,
+            field_names=None,
+            order_by_field=None,
+            order_by_direction='ASCENDING',
+            limit=None,
+            max_tries=3,
             initial_backoff=1
         ):
         collection_ref = self.db.collection(collection_name)
 
         docs = collection_ref.limit(1).stream()
         if not list(docs):
-            return None 
+            return []
 
         query = collection_ref
         if query_filters:
@@ -165,9 +174,9 @@ class firestore_db:
                     docs.append(doc_dict)
                 return docs
             except Exception as e:
-                #print(e)
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore get_docs failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database query failed: {collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -190,9 +199,10 @@ class firestore_db:
                 else:
                     doc_ref.update({field_name: current_value + increment})
                 return True
-            except:
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore increment_document_fields failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database increment failed: {collection_name}/{document_id}/{field_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -212,9 +222,10 @@ class firestore_db:
 
                 doc_ref.update(updates)
                 return True
-            except:
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore update_document_fields failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database update failed: {collection_name}/{document_id}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -234,9 +245,10 @@ class firestore_db:
                     doc_ref = collection_ref.document()
                 doc_ref.set(data)
                 return doc_ref.id
-            except:
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore create_doc failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database create failed: {collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
@@ -254,11 +266,10 @@ class firestore_db:
                 item_ref = sub_collection_ref.document()
                 item_ref.set(data)
                 return item_ref.id
-            except:
+            except Exception as e:
                 if tries >= max_tries:
-                    return None
+                    logging.error(f"Firestore create_sub_collection_item failed after {max_tries} retries: {e}")
+                    raise DBError(f"Database create failed: {collection_name}/{document_id}/{sub_collection_name}") from e
                 time.sleep(backoff)
                 backoff *= 2
                 tries += 1
-
-

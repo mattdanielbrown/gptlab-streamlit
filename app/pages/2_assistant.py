@@ -1,12 +1,14 @@
-import streamlit as st 
+import streamlit as st
 import app_user as vuser
 import app_utils as vutil
-import app_component as ac 
-import api_bots as abots 
-import api_sessions as asessions 
-import api_util_general as ag 
-import csv 
-import io 
+import app_component as ac
+import api_bots as abots
+import api_sessions as asessions
+import api_util_general as ag
+import csv
+import io
+import logging
+from exceptions import OpenAIError, RecordNotCreatedError, RecordUpdateError, BadRequestError
 
 st.set_page_config(
     page_title="GPT Lab - Assistant",
@@ -18,151 +20,94 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Common cleanup keys for session handlers
+SESSION_CLEANUP_KEYS = ['bot_info', 'session_id', 'session_bot_id', 'session_msg_list']
+
+
 def handler_bot_search(search_container=None, user_search_str=None):
     if user_search_str == None:
         user_search_str = st.session_state.bot_search_input
     try:
         b = abots.bots()
         bot = b.get_bot(user_search_str)
-        st.session_state.bot_info = bot 
-        return True 
-    except b.BotNotFound as e: 
+        st.session_state.bot_info = bot
+        return True
+    except b.BotNotFound as e:
         if search_container:
-            with search_container: 
+            with search_container:
                 st.error("AI assistant could not be found")
-        return False 
+        return False
     except b.BotIncomplete as e:
         if search_container:
             with search_container:
                 st.error("AI assistant could not be selected, as it was not configured properly.")
-        return False 
+        return False
 
+
+@vutil.handle_session_errors(cleanup_keys=SESSION_CLEANUP_KEYS)
 def handler_start_session():
+    # Check if user has access to the model in bot_info's model_config
+    if st.session_state.bot_info['model_config']['model'] not in st.session_state.user['key_supported_models_list']:
+        # Swap the model with the first model in the user's key_supported_models_list
+        st.session_state.bot_info['model_config']['model'] = st.session_state.user['key_supported_models_list'][0]
+        st.session_state.bot_info['model_overwritten'] = True
 
-    def _cleanup_handler_start_session_exception():
-        if "bot_info" in st.session_state:
-            del st.session_state['bot_info']
-        if "session_id" in st.session_state:
-            del st.session_state['session_id']
-        if "session_bot_id" in st.session_state:
-            del st.session_state['session_bot_id']
-        if "session_msg_list" in st.session_state:
-            del st.session_state['session_msg_list']
+    s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
 
-    try:
-        # Check if user has access to the model in bot_info's model_config
-        if st.session_state.bot_info['model_config']['model'] not in st.session_state.user['key_supported_models_list']:
-            # Swap the model with the first model in the user's key_supported_models_list
-            st.session_state.bot_info['model_config']['model'] = st.session_state.user['key_supported_models_list'][0]
-            st.session_state.bot_info['model_overwritten'] = True 
+    new_model = None
 
-        s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
+    if 'model_overwritten' in st.session_state.bot_info and st.session_state.bot_info['model_overwritten']:
+        new_model = st.session_state.bot_info['model_config']['model']
 
-        new_model = None 
-
-        if 'model_overwritten' in st.session_state.bot_info and st.session_state.bot_info['model_overwritten']:
-            new_model = st.session_state.bot_info['model_config']['model']
-            
-        chat_session = s.create_session(
-            user_id=st.session_state.user['id'], 
-            bot_id=st.session_state.bot_info['id'], 
-            oai_api_key=st.session_state.user['api_key'],
-            overwritten_model = new_model
-        )
-        st.session_state.session_id = chat_session['session_info']['session_id']
-        st.session_state.session_bot_id = chat_session['session_info']['session_data']['bot_id']
-        # Create a session state variables to hold messages 
-        st.session_state.session_msg_list = []
-        bot_message = chat_session['session_response']['bot_message']
-        st.session_state.session_msg_list.append({'is_user':False, 'message':bot_message})
-    except s.OpenAIError as e:
-        _cleanup_handler_start_session_exception()
-        if e.error_type == "RateLimitError" and str(e) == "OpenAI: You exceeded your current quota, please check your plan and billing details.": 
-            st.error(f"{e}  \n  \n**Friendly reminder:** If you are using a free-trial OpenAI API key, this error is caused by the extremely low rate limits associated with the key. To optimize your chat experience, we recommend upgrading to the pay-as-you-go OpenAI plan. Please see our FAQ for more information.")
-        else:
-            st.error(f"{e}")
-    except (s.SessionNotRecorded, s.PromptNotRecorded, s.MessageNotRecorded)  as e:
-        _cleanup_handler_start_session_exception()
-        st.error("Could not start a session with the AI assistant. Please try again later.")
-    except (s.BadRequest, Exception) as e:
-        _cleanup_handler_start_session_exception()
-        st.error("Something went wrong. Could not start a session with the AI assistant. Please try again later.")
+    chat_session = s.create_session(
+        user_id=st.session_state.user['id'],
+        bot_id=st.session_state.bot_info['id'],
+        oai_api_key=st.session_state.user['api_key'],
+        overwritten_model = new_model
+    )
+    st.session_state.session_id = chat_session['session_info']['session_id']
+    st.session_state.session_bot_id = chat_session['session_info']['session_data']['bot_id']
+    # Create a session state variables to hold messages
+    st.session_state.session_msg_list = []
+    bot_message = chat_session['session_response']['bot_message']
+    st.session_state.session_msg_list.append({'is_user':False, 'message':bot_message})
 
 
+@vutil.handle_session_errors(cleanup_keys=SESSION_CLEANUP_KEYS)
 def handler_user_chat():
     user_message = st.session_state.user_chat_input.replace("\n","")
     st.session_state.session_msg_list.append({"message":user_message, "is_user": True})
 
     s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
 
-    def _cleanup_handler_user_chat_exception():
-        if "bot_info" in st.session_state:
-            del st.session_state['bot_info']
-        if "session_id" in st.session_state:
-            del st.session_state['session_id']
-        if "session_bot_id" in st.session_state:
-            del st.session_state['session_bot_id']
-        if "session_msg_list" in st.session_state:
-            del st.session_state['session_msg_list']
-
-    try:
-        session_response = s.get_session_response(session_id=st.session_state.session_id, oai_api_key=st.session_state.user['api_key'], user_message=user_message)
-        if session_response:
-            if session_response['user_message_flagged'] == True:
-                flagged_categories_str = ", ".join(session_response['user_message_flagged_categories'])
-                st.warning(f"Your most recent chat message was flagged by OpenAI's content moderation endpoint for: {flagged_categories_str}")
-            st.session_state.session_msg_list.append({"message":session_response['bot_message'], "is_user": False})
-
-    except s.OpenAIError as e:
-        _cleanup_handler_user_chat_exception()
-        if e.error_type == "RateLimitError" and str(e) == "OpenAI: You exceeded your current quota, please check your plan and billing details.": 
-            st.error(f"{e}  \n  \n**Friendly reminder:** If you are using a free-trial OpenAI API key, this error is caused by the extremely low rate limits associated with the key. To optimize your chat experience, we recommend upgrading to the pay-as-you-go OpenAI plan. Please see our FAQ for more information.")
-        else:
-            st.error(f"{e}")
-    except (s.SessionAttributeNotUpdated, s.PromptNotRecorded, s.MessageNotRecorded)  as e:
-        _cleanup_handler_user_chat_exception()
-        st.error("Session or chat data could not be recorded. Please try again later.")
-    except (s.BadRequest, Exception) as e: 
-        _cleanup_handler_user_chat_exception()
-        st.error("Unknown error. Try again later.")
+    session_response = s.get_session_response(session_id=st.session_state.session_id, oai_api_key=st.session_state.user['api_key'], user_message=user_message)
+    if session_response:
+        if session_response['user_message_flagged'] == True:
+            flagged_categories_str = ", ".join(session_response['user_message_flagged_categories'])
+            st.warning(f"Your most recent chat message was flagged by OpenAI's content moderation endpoint for: {flagged_categories_str}")
+        st.session_state.session_msg_list.append({"message":session_response['bot_message'], "is_user": False})
 
 
+@vutil.handle_session_errors(cleanup_keys=SESSION_CLEANUP_KEYS)
 def handler_session_end():
     s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
 
-    def _cleanup_handler_session_end_exception():
-        if "bot_info" in st.session_state:
-            del st.session_state['bot_info']
-        if "session_id" in st.session_state:
-            del st.session_state['session_id']
-        if "session_bot_id" in st.session_state:
-            del st.session_state['session_bot_id']
-        if "session_msg_list" in st.session_state:
-            del st.session_state['session_msg_list']
+    session_response = s.get_session_response(session_id=st.session_state.session_id, oai_api_key=st.session_state.user['api_key'], user_message=st.session_state.bot_info['summary_prompt_msg'])
+    if session_response:
+        st.session_state.session_msg_list.append({"message":session_response['bot_message'], "is_user": False})
 
-    try:
-        session_response = s.get_session_response(session_id=st.session_state.session_id, oai_api_key=st.session_state.user['api_key'], user_message=st.session_state.bot_info['summary_prompt_msg'])
-        if session_response:
-            st.session_state.session_msg_list.append({"message":session_response['bot_message'], "is_user": False})
-    except s.OpenAIError as e: 
-        _cleanup_handler_session_end_exception()
-    except (s.SessionAttributeNotUpdated, s.PromptNotRecorded, s.MessageNotRecorded) as e:
-        _cleanup_handler_session_end_exception()
-        st.error("Session was not wrapped up properly. Please try again later.")
-    except (s.BadRequest , Exception) as e: 
-        _cleanup_handler_session_end_exception()
-        st.error("Unknown error. Try again later.")
-    st.session_state.session_ended = 1 
+    st.session_state.session_ended = 1
 
     try:
         s.end_session(st.session_state['session_id'])
-    except Exception as e:
-        pass # purposely swallow all sort of exceptions. no point trouble users
+    except Exception:
+        pass  # Swallow errors on session end - no point troubling users
+
 
 def handler_session_rating(liked):
 
     s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
-    user_liked = s.UserLiked.LIKED.value 
+    user_liked = s.UserLiked.LIKED.value
     if liked == False:
         user_liked = s.UserLiked.DISLIKED.value
     s.rate_session(session_id=st.session_state.session_id, user_liked=user_liked)
@@ -170,7 +115,7 @@ def handler_session_rating(liked):
 
 
 def handler_bot_cancellation():
-    del st.session_state.bot_info 
+    del st.session_state.bot_info
     url_params = st.experimental_get_query_params()
     if bool(url_params) == True and 'assistant_id' in url_params:
         st.experimental_set_query_params(assistant_id="")
@@ -199,22 +144,13 @@ def handler_generate_chat_csv():
 
     for message in chat_message:
         csv_writer.writerow([message['is_user'], message["message"]])
-    
-    return csv_buffer.getvalue()    
+
+    return csv_buffer.getvalue()
 
 
-# centralize logic to go back to the lounge 
-def handler_back_to_lounge(): 
-    if "bot_info" in st.session_state:
-        del st.session_state['bot_info']
-    if "session_id" in st.session_state:
-        del st.session_state['session_id']
-    if "session_bot_id" in st.session_state:
-        del st.session_state['session_bot_id']
-    if "session_ended" in st.session_state:
-        del st.session_state['session_ended']
-    if "session_msg_list" in st.session_state:
-        del st.session_state['session_msg_list']
+# centralize logic to go back to the lounge
+def handler_back_to_lounge():
+    vutil.cleanup_session_state(['bot_info', 'session_id', 'session_bot_id', 'session_ended', 'session_msg_list'])
     vutil.switch_page('lounge')
 
 
@@ -255,20 +191,20 @@ def render_bot_details(bot):
     if st.session_state.bot_info['model_config']['model'] not in st.session_state.user['key_supported_models_list']:
         # Swap the model with the first model in the user's key_supported_models_list
         st.session_state.bot_info['model_config']['model'] = st.session_state.user['key_supported_models_list'][0]
-        st.session_state.bot_info['model_overwritten'] = True 
-    
+        st.session_state.bot_info['model_overwritten'] = True
+
     model_overwrite = col2.selectbox(
-        label="GPT Model", 
+        label="GPT Model",
         options=(
             st.session_state.user['key_supported_models_list']),
-            key='assistant_model_name', 
+            key='assistant_model_name',
             help="The assistant's default GPT model is currently selected. You may overwrite the model by selecting a different one.",
             index=st.session_state.user['key_supported_models_list'].index(st.session_state.bot_info['model_config']['model']),
     )
 
     if model_overwrite != st.session_state.bot_info['model_config']['model']:
         st.session_state.bot_info['model_config']['model'] = model_overwrite
-        st.session_state.bot_info['model_overwritten'] = True 
+        st.session_state.bot_info['model_overwritten'] = True
 
     col2.write("Assistant Description:")
     col2.write(bot['description'])
@@ -285,16 +221,16 @@ def render_bot_details(bot):
     sessions = s.get_past_sessions(user_id=st.session_state['user']['id'], bot_id=st.session_state['bot_info']['id'])
 
     if len(sessions)>0:
-        for session in sessions: 
-            # ignoring anything that has less than 2 messages since those are likely abandoned errors 
+        for session in sessions:
+            # ignoring anything that has less than 2 messages since those are likely abandoned errors
             if session['message_count'] > 2:
                 past_sessions.append({
-                    'id':session['id'], 
-                    'message_count':session['message_count'], 
+                    'id':session['id'],
+                    'message_count':session['message_count'],
                     'created_date':ag.format_datetime(session['created_date']),
                     'model': session['bot_model']
-                    })               
-    
+                    })
+
     if len(past_sessions) > 0:
         st.write("\n")
         st.write("Or revisit a past session")
@@ -302,15 +238,15 @@ def render_bot_details(bot):
         col1.write("Session time")
         col2.write("GPT Model")
         col3.write("Messages")
-        for past_session in past_sessions: 
+        for past_session in past_sessions:
             button_key="session_{0}".format(past_session["id"])
             col1, col2, col3, col4 = st.columns([2,2,1,4])
             col1.write(past_session['created_date'])
-            col2.write(str(past_session['model']))            
+            col2.write(str(past_session['model']))
             col3.write(str(past_session['message_count']))
             col4.button(label="Resume session", key=button_key, on_click=handler_load_past_session,args=(past_session['id'],bot['id'],))
             #st.write(past_session['id'])
-    
+
     # st.write(st.session_state)
 
 def render_chat_session():
@@ -331,10 +267,10 @@ def render_chat_session():
 
         for message in st.session_state.session_msg_list:
             render_message(message['is_user'], st.session_state.bot_info['name'], message['message'])
-        
+
         st.chat_input(key="user_chat_input", on_submit=handler_user_chat)
 
-    if st.session_state.session_ended == 1: 
+    if st.session_state.session_ended == 1:
         st.write("Session Recap")
         message = st.session_state.session_msg_list[-1]['message']
 
@@ -344,7 +280,7 @@ def render_chat_session():
         st.divider()
 
         with st.container():
-            col1, col2, col3, col4 = st.columns([3,1,1,2]) 
+            col1, col2, col3, col4 = st.columns([3,1,1,2])
             col1.write(f"Did you enjoy your session with {st.session_state.bot_info['name']}?")
             col2.button("👍", use_container_width=True, on_click=handler_session_rating, args=(True,))
             col3.button("👎", use_container_width=True, on_click=handler_session_rating, args=(False,))
@@ -358,18 +294,18 @@ def render_chat_session():
 
         if col2.button("Return to lounge"):
             handler_back_to_lounge()
-        
+
 
 
 
 def render_message(is_user, bot_name, message):
     avatar_url = "https://api.dicebear.com/5.x/avataaars-neutral/svg?seed=ARoN&radius=25&backgroundColor=f8d25c"
 
-    chat_name = "user" 
+    chat_name = "user"
 
     if is_user == False:
-        avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format(bot_name) 
-        chat_name = bot_name 
+        avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format(bot_name)
+        chat_name = bot_name
 
     with st.chat_message(name=chat_name, avatar=avatar_url):
         st.markdown(message.replace("\n","  \n"))
@@ -377,12 +313,12 @@ def render_message(is_user, bot_name, message):
 
 ## STATE MANAGEMENT
 if "session_ended" not in st.session_state:
-    st.session_state.session_ended = 0 
+    st.session_state.session_ended = 0
 
-if "session_bot_id" in st.session_state and "bot_info" in st.session_state: 
-    # mix match between session bot ID and bot id 
-    # caused by user navigating to the Lounge before ending a session and choosing a different bot from the lounge 
-    if st.session_state.session_bot_id != st.session_state['bot_info']['id']: 
+if "session_bot_id" in st.session_state and "bot_info" in st.session_state:
+    # mix match between session bot ID and bot id
+    # caused by user navigating to the Lounge before ending a session and choosing a different bot from the lounge
+    if st.session_state.session_bot_id != st.session_state['bot_info']['id']:
         if "session_msg_list" in st.session_state:
             del st.session_state['session_msg_list']
         del st.session_state['session_bot_id']
@@ -391,8 +327,8 @@ if "session_bot_id" in st.session_state and "bot_info" in st.session_state:
 if 'user' not in st.session_state or st.session_state.user['id'] is None:
     render_user_login_required()
 else:
-    if 'bot_info' not in st.session_state: 
-        # first check url_params for asssitant_id 
+    if 'bot_info' not in st.session_state:
+        # first check url_params for asssitant_id
         url_params = st.experimental_get_query_params()
         if bool(url_params) == True and 'assistant_id' in url_params:
             if url_params['assistant_id'][0] != "":
@@ -400,19 +336,19 @@ else:
                 if bot_found == False:
                     st.error("Assistant in URL cannot be found")
                     st.experimental_set_query_params(assistant_id="")
-                    render_bot_search() 
-                else: 
-                    # bot found. Get UI to re-render 
+                    render_bot_search()
+                else:
+                    # bot found. Get UI to re-render
                     st.experimental_rerun()
         else:
             render_bot_search()
     else:
         if "session_id" not in st.session_state:
             if "initial_prompt_msg" in st.session_state.bot_info:
-                render_bot_details(st.session_state.bot_info)    
+                render_bot_details(st.session_state.bot_info)
             else:
                 handler_bot_search(user_search_str=st.session_state.bot_info['id'])
-                render_bot_details(st.session_state.bot_info)    
+                render_bot_details(st.session_state.bot_info)
         else:
             render_chat_session()
 

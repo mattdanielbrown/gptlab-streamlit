@@ -1,28 +1,27 @@
-import api_util_firebase as fu 
-import api_util_general as gu 
-import api_users as uu 
-import enum 
-# Testing only
-#import streamlit as st 
+import api_util_firebase as fu
+import api_util_general as gu
+import api_users as uu
+import enum
+from exceptions import (
+    BotNotFoundError,
+    BotIncompleteError,
+    BadRequestError,
+    DBError,
+)
+
 
 class bots:
 
-    class BotNotFound(Exception):
-        pass
-
-    class BotIncomplete(Exception):
-        pass
-    
-    class BadRequest(Exception):
-        pass
-
-    class DBError(Exception):
-        pass
+    # Keep inner classes for backward compatibility during transition
+    BotNotFound = BotNotFoundError
+    BotIncomplete = BotIncompleteError
+    BadRequest = BadRequestError
+    DBError = DBError
 
     class SessionType(enum.Enum):
         BRAIN_STORMING =2
         COACHING = 3
-    
+
     def __init__(self):
         self.db = fu.firestore_db()
 
@@ -34,17 +33,8 @@ class bots:
 
         if user_id:
             query_filters = [("is_active","==",True),("creator_user_id","==",user_id)]
-            # user = uu.users()
-            # try:
-            #     user.get_user(user_id)
-            #     query_filters = [("is_active","==",True),("creator_user_id","==",user_id)]
-            # except:
-            #     raise self.BadRequest("Bad Request: User not found")
-            
-        bot_docs = self.db.get_docs(collection_name="bots", query_filters=query_filters)
 
-        if bot_docs == None:
-            raise self.DBError("Connection Problem: Try again later")
+        bot_docs = self.db.get_docs(collection_name="bots", query_filters=query_filters)
 
         bots = []
 
@@ -56,8 +46,8 @@ class bots:
                 'description': bot['data']['description'],
                 'sessions_started': bot['data'].get('sessions_started',0)
             })
-        
-        return bots 
+
+        return bots
 
 
 
@@ -65,14 +55,14 @@ class bots:
         bot = self.db.get_doc(collection_name="bots", document_id=bot_id)
 
         if bot == None:
-            raise self.BotNotFound("Bot not found")
+            raise BotNotFoundError("Bot not found")
 
         model_config_id = bot['data']['active_model_config_id']
         initial_prompt_id = bot['data']['active_initial_prompt_id']
 
         if prompt_id != None:
             initial_prompt_id = prompt_id
-        
+
         if model_id != None:
             model_config_id = model_id
 
@@ -94,15 +84,15 @@ class bots:
                 'initial_prompt_msg': prompt_initial['data']['message']
             })
         else:
-            raise self.BotIncomplete("Bot configuration: bot missing initial prompt")
-        
+            raise BotIncompleteError("Bot configuration: bot missing initial prompt")
+
         if summary != None:
             bot_dict.update({
                 'summary_prompt_id': summary['id'],
                 'summary_prompt_msg': summary['data']['message']
             })
         elif self.SessionType(bot['data']['session_type']) == self.SessionType.BRAIN_STORMING or self.SessionType(bot['data']['session_type']) == self.SessionType.COACHING:
-             raise self.BotIncomplete("Bot configuration: bot missing summary prompt")
+             raise BotIncompleteError("Bot configuration: bot missing summary prompt")
 
         if model != None:
             bot_dict.update({
@@ -110,24 +100,24 @@ class bots:
                 'model_config': model['data']['config']
             })
         else:
-            raise self.BotIncomplete("Bot configuration: bot missing initial prompt")         
+            raise BotIncompleteError("Bot configuration: bot missing initial prompt")
 
-        return bot_dict 
+        return bot_dict
 
     def update_bot_stats(self, bot_id, metric_value_pairs):
         bot = self.get_bot(bot_id)
-        
+
         if not bot:
-            raise self.BotNotFound("Bot not found")
+            raise BotNotFoundError("Bot not found")
 
         if metric_value_pairs == None:
-            raise self.BadRequest("Bad request: need to supply (metric, value) pairs")
+            raise BadRequestError("Bad request: need to supply (metric, value) pairs")
 
         for metric_value_pair in metric_value_pairs:
             try:
                 float(str(metric_value_pair[1]))
-            except:
-                raise self.BadRequest("Bad request: need numeric values ")
+            except ValueError:
+                raise BadRequestError("Bad request: need numeric values")
 
         for metric_value_pair in metric_value_pairs:
             self.db.increment_document_fields(collection_name="bots", document_id=bot_id, field_name=metric_value_pair[0], increment=metric_value_pair[1])
@@ -135,7 +125,7 @@ class bots:
 
     def create_bot(self, bot_config, user_id=None):
 
-        ## validate input 
+        ## validate input
         missing_fields = []
 
         required_fields = ["name", "description", "tag_line", "session_type", "initial_prompt_msg", "summary_prompt_msg", "model_config"]
@@ -147,19 +137,10 @@ class bots:
         for sub_field in required_sub_fields:
             if sub_field not in bot_config["model_config"]:
                 missing_fields.append('model_config'+sub_field)
-        
+
         if len(missing_fields) > 0:
             missing_fields_str = ', '.join(missing_fields)
-            raise self.BadRequest("Bad request: missing fields " + missing_fields_str)
-
-        # if user_id:
-        #     user = uu.users()
-        #     try:
-        #         user.get_user(user_id)
-        #     except:
-        #         raise self.BadRequest("Bad Request: User not found")
-
-        #TODO: eventually, need to check for field types and string lengths 
+            raise BadRequestError("Bad request: missing fields " + missing_fields_str)
 
         bot_dict = {
             'name': bot_config['name'],
@@ -176,9 +157,7 @@ class bots:
         bot_id = self.db.create_doc(collection_name="bots",data=bot_dict)
 
         if not bot_id:
-            raise self.DBError("Tempo")
-            # raise error 
-            pass 
+            raise DBError("Failed to create bot")
 
         initial_prompt_dict = {
             'message_type': 'initial_prompt',
@@ -219,10 +198,10 @@ class bots:
             user = uu.users()
             user.update_user_stats(user_id, bot_creation_metric)
 
-        return bot_id 
+        return bot_id
 
     def get_session_type(self, session_type_str):
             try:
                 return self.SessionType[session_type_str].value
-            except KeyError: 
+            except KeyError:
                 raise ValueError(f"Invalid session type: '{session_type_str}'")

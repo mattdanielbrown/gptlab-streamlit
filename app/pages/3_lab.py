@@ -1,15 +1,15 @@
-import streamlit as st 
-import api_bots as ab 
-import api_sessions as asessions 
+import streamlit as st
+import api_bots as ab
+import api_sessions as asessions
 
-import app_user as uv 
+import app_user as uv
 import app_utils as vutil
 import app_component as au
+from exceptions import OpenAIError, BadRequestError, RecordNotCreatedError
 
 st.set_page_config(
     page_title="GPT Lab - Lab",
-    page_icon="https://api.dicebear.com/5.x/bottts-neutral/svg?seed=gptLAb"#,
-    #menu_items={"About": "GPT Lab is a user-friendly app that allows anyone to interact with and create their own AI Assistants powered by OpenAI's GPT-3 language model. Our goal is to make AI accessible and easy to use for everyone, so you can focus on designing your Assistant without worrying about the underlying infrastructure.", "Get help": None, "Report a Bug": None}
+    page_icon="https://api.dicebear.com/5.x/bottts-neutral/svg?seed=gptLAb"
 )
 
 
@@ -108,6 +108,10 @@ for session_type in b.SessionType:
     session_types.append((friendly_name, session_type))
 
 
+# Lab cleanup keys
+LAB_CLEANUP_KEYS = ['lab_bot', 'lab_msg_list']
+
+
 def render_lab_step_one():
     st.title("Lab")
     st.markdown(factory_intro)
@@ -117,13 +121,13 @@ def render_lab_step_one():
     st.markdown("---")
     st.markdown("### Step 1: Initial Prompt and AI Personality")
 
-    st.markdown("##### Initial Prompt")   
+    st.markdown("##### Initial Prompt")
     st.write(help_msg_initial_prompt)
 
     restart_disabled=True
     advance_disabled=True
-    max_token_limit=2500 
-   
+    max_token_limit=2500
+
     if 'lab_bot' not in st.session_state:
         st.text_area(label="Initial Prompt", key="lab_bot_initial_prompt", max_chars=2000, height=250,disabled=button_enabled)
     else:
@@ -150,8 +154,8 @@ def render_lab_step_one():
     if 'lab_bot' not in st.session_state:
         col2.number_input(label="AI Response Token Limit", key='lab_model_max_tokens', min_value=0, max_value=max_token_limit, value=250, step=50, help=help_msg_max_token, disabled=button_enabled)
     else:
-        if st.session_state.lab_model_max_tokens_input >= max_token_limit: 
-            st.session_state.lab_model_max_tokens_input = max_token_limit 
+        if st.session_state.lab_model_max_tokens_input >= max_token_limit:
+            st.session_state.lab_model_max_tokens_input = max_token_limit
         col2.number_input(label="AI Response Token Limit", key='lab_model_max_tokens', min_value=0, max_value=max_token_limit, value=st.session_state.lab_model_max_tokens_input, step=50, help=help_msg_max_token, disabled=button_enabled)
     st.session_state.lab_model_max_tokens_input = st.session_state.lab_model_max_tokens
 
@@ -168,10 +172,10 @@ def render_lab_step_one():
     expand_model_params = False
 
     if personality == "Custom":
-        expand_model_params = True 
+        expand_model_params = True
 
     if st.session_state.lab_bot_initial_prompt.strip() != "":
-        advance_disabled = False 
+        advance_disabled = False
 
 
     model_param_expander = st.expander("Advanced Model Parameters", expanded=expand_model_params)
@@ -183,23 +187,23 @@ def render_lab_step_one():
                 col1.slider(label="Temperature", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['temperature'], key='lab_model_temperature', help=help_msg_model_temperature, disabled=True)
                 col1.slider(label="Top P", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['top_p'], key='lab_model_top_p', help=help_msg_model_top_p, disabled=True)
                 col2.slider(label="Frequency penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['frequency_penalty'], key='lab_model_frequency_penalty', help=help_msg_model_freq_penalty, disabled=True)
-                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=True)   
+                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=True)
             else:
                 col1.slider(label="Temperature", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['temperature'], key='lab_model_temperature', help=help_msg_model_temperature, disabled=False)
                 col1.slider(label="Top P", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['top_p'], key='lab_model_top_p', help=help_msg_model_top_p, disabled=False)
                 col2.slider(label="Frequency penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['frequency_penalty'], key='lab_model_frequency_penalty', help=help_msg_model_freq_penalty, disabled=False)
-                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=False)   
+                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=False)
         else:
-            if personality != "Custom": 
+            if personality != "Custom":
                 col1.slider(label="Temperature", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['temperature'], key='lab_model_temperature', help=help_msg_model_temperature, disabled=True)
                 col1.slider(label="Top P", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['top_p'], key='lab_model_top_p', help=help_msg_model_top_p, disabled=True)
                 col2.slider(label="Frequency penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['frequency_penalty'], key='lab_model_frequency_penalty', help=help_msg_model_freq_penalty, disabled=True)
-                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=True)   
+                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=model_params[personality]['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=True)
             else:
                 col1.slider(label="Temperature", min_value=0.0, max_value=1.0, step=0.1, value=st.session_state['lab_bot']['model_config']['temperature'], key='lab_model_temperature', help=help_msg_model_temperature, disabled=False)
                 col1.slider(label="Top P", min_value=0.0, max_value=1.0, step=0.1, value=st.session_state['lab_bot']['model_config']['top_p'], key='lab_model_top_p', help=help_msg_model_top_p, disabled=False)
                 col2.slider(label="Frequency penalty", min_value=0.0, max_value=1.0, step=0.1, value=st.session_state['lab_bot']['model_config']['frequency_penalty'], key='lab_model_frequency_penalty', help=help_msg_model_freq_penalty, disabled=False)
-                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=st.session_state['lab_bot']['model_config']['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=False)   
+                col2.slider(label="Presence penalty", min_value=0.0, max_value=1.0, step=0.1, value=st.session_state['lab_bot']['model_config']['presence_penalty'], key='lab_model_presence_penalty', help=help_msg_model_presence_penalty, disabled=False)
 
 
     st.write("\n")
@@ -220,7 +224,7 @@ def render_lab_step_two():
     au.robo_avatar_component()
     st.write("\n")
 
-    # input box 
+    # input box
     st.markdown("### Step 2: Test Chat with AI")
 
     col1, col2 = st.columns(2)
@@ -229,16 +233,16 @@ def render_lab_step_two():
 
     for message in st.session_state.lab_msg_list:
         render_message(message['is_user'], message['message'])
-    
+
     st.chat_input(key="lab_user_chat_input", on_submit=handler_user_chat, disabled=button_enabled)
 
 
 def render_message(is_user, message):
     avatar_url = "https://api.dicebear.com/5.x/avataaars-neutral/svg?seed=ARoN&radius=25&backgroundColor=f8d25c"
-    chat_name = "user" 
+    chat_name = "user"
 
     if is_user == False:
-        avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed=gptLAb&radius=25" 
+        avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed=gptLAb&radius=25"
         chat_name = "assistant"
 
     with st.chat_message(name=chat_name, avatar=avatar_url):
@@ -256,7 +260,7 @@ def render_lab_step_three():
     st.markdown("---")
     st.write("\n")
 
-    # input box 
+    # input box
     st.markdown("### Step 3: Finalize AI")
 
     st.markdown("##### Name your AI")
@@ -266,20 +270,20 @@ def render_lab_step_three():
     col2.text_input(label="Tag Line", key="lab_bot_tagline", help=help_msg_tag_line, max_chars=25)
     st.text_area(label="Description", key="lab_bot_description", help=help_msg_description, max_chars=250)
 
-    bot_avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format('gptLAb') 
+    bot_avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format('gptLAb')
     bot_name = '[Name]'
     bot_tagline = '[Tag Line]'
     bot_description = '[Description]'
 
-    if 'lab_bot_name' in st.session_state and st.session_state.lab_bot_name.strip() != "": 
-        bot_avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format(st.session_state.lab_bot_name) 
+    if 'lab_bot_name' in st.session_state and st.session_state.lab_bot_name.strip() != "":
+        bot_avatar_url = "https://api.dicebear.com/5.x/bottts-neutral/svg?seed={0}&radius=25".format(st.session_state.lab_bot_name)
         bot_name = st.session_state.lab_bot_name
 
     if 'lab_bot_tagline' in st.session_state and st.session_state.lab_bot_tagline.strip() != "":
         bot_tagline = st.session_state.lab_bot_tagline
 
     if 'lab_bot_description' in st.session_state and st.session_state.lab_bot_description.strip() != "":
-        bot_description = st.session_state.lab_bot_description        
+        bot_description = st.session_state.lab_bot_description
 
     st.write("\n")
     st.markdown("##### Previews")
@@ -311,7 +315,7 @@ def render_lab_step_three():
         and 'lab_bot_tagline' in st.session_state and st.session_state.lab_bot_tagline.strip() != "" \
         and 'lab_bot_description' in st.session_state and st.session_state.lab_bot_description.strip() != "" \
         and 'lab_prompt_summary' in st.session_state and st.session_state.lab_prompt_summary.strip() != "":
-        bot_creation_disallowed = False 
+        bot_creation_disallowed = False
 
     col1, col2 = st.columns(2)
     col1.button("Back to Step 1", key='lab_bot_cancel', on_click=handler_lab_step_one_return)
@@ -324,7 +328,7 @@ def render_lab_step_four():
     #st.markdown("---")
     au.robo_avatar_component()
     st.write("\n")
-    st.success(f"#### 🎉🎉 **Congratulations on creating {st.session_state['lab_bot']['name']}! 🎉🎉**  \n * {st.session_state['lab_bot']['name']} is now waiting for you in the lounge.  \n  * You can also share {st.session_state['lab_bot']['name']} with your friends and family by giving them this [shareable link](/assistant?assistant_id={st.session_state.lab_bot_id}) or {st.session_state['lab_bot']['name']}'s unique code: `{st.session_state.lab_bot_id}`. They can search for {st.session_state['lab_bot']['name']} on the Assistant page with this code.")
+    st.success(f"#### Congratulations on creating {st.session_state['lab_bot']['name']}!  \n * {st.session_state['lab_bot']['name']} is now waiting for you in the lounge.  \n  * You can also share {st.session_state['lab_bot']['name']} with your friends and family by giving them this [shareable link](/assistant?assistant_id={st.session_state.lab_bot_id}) or {st.session_state['lab_bot']['name']}'s unique code: `{st.session_state.lab_bot_id}`. They can search for {st.session_state['lab_bot']['name']} on the Assistant page with this code.")
 
     col1, col2 = st.columns(2)
 
@@ -347,21 +351,17 @@ def render_lab_login():
 
 
 def handle_lab_restart():
-    if "lab_bot" in st.session_state:
-        del st.session_state['lab_bot']
-    if "lab_msg_list" in st.session_state:
-        del st.session_state['lab_msg_list']
-    if 'lab_bot_id' in st.session_state:
-        del st.session_state.lab_bot_id 
-    if "lab_model_index" in st.session_state:
-        del st.session_state.lab_model_index
-    if "lab_model_personality_index" in st.session_state:
-        del st.session_state.lab_model_personality_index
-    if "lab_model_max_tokens_input" in st.session_state:
-        del st.session_state.lab_model_max_tokens_input
-
+    vutil.cleanup_session_state([
+        'lab_bot', 'lab_msg_list', 'lab_bot_id',
+        'lab_model_index', 'lab_model_personality_index', 'lab_model_max_tokens_input'
+    ])
     st.session_state.lab_active_step = 1
     st.experimental_rerun()
+
+
+def _on_lab_error(e):
+    """Callback for lab error handling - reset to step 1."""
+    st.session_state.lab_active_step = 1
 
 
 def handler_lab_step_one_confirm():
@@ -385,19 +385,16 @@ def handler_lab_step_one_confirm():
             s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
             chat_session = s.create_session(user_id=st.session_state.user['id'], bot_config_dict=st.session_state.lab_bot, oai_api_key=st.session_state.user['api_key'])
             st.session_state.lab_session_id = chat_session['session_info']['session_id']
-            # Create a session state variables to hold messages 
+            # Create a session state variables to hold messages
             st.session_state.lab_msg_list = []
             bot_message = chat_session['session_response']['bot_message']
             st.session_state.lab_msg_list.append({'is_user':False, 'message':bot_message})
-        except s.OpenAIError as e: 
+        except OpenAIError as e:
             st.session_state.lab_active_step = 1
-            if e.error_type == "RateLimitError" and str(e) == "OpenAI: You exceeded your current quota, please check your plan and billing details.": 
-                st.error(f"Could not start a session with the AI assistant.  \n  \n{e}  \n  \n**Friendly reminder:** If you are using a free-trial OpenAI API key, this error is caused by the extremely low rate limits associated with the key. To optimize your chat experience, we recommend upgrading to the pay-as-you-go OpenAI plan. Please see our FAQ for more information.")
-            else:
-                st.error(f"Could not start a session with the AI assistant.  \n  \n{e}")
-        except (s.BadRequest, s.SessionNotRecorded, s.MessageNotRecorded, s.PromptNotRecorded, Exception) as e:
+            vutil.handle_openai_error(e)
+        except (BadRequestError, RecordNotCreatedError, Exception) as e:
             st.session_state.lab_active_step = 1
-            del st.session_state['lab_bot']
+            vutil.cleanup_session_state(['lab_bot'])
             st.error("Something went wrong. Could not start a session with the AI assistant. Please try again later.")
 
     else:
@@ -407,8 +404,8 @@ def handler_lab_step_one_confirm():
 
 def handler_lab_step_one_return():
     st.session_state.lab_active_step = 1
-    st.session_state.lab_msg_list=[] # clear test chat history 
-    st.session_state.lab_msg_prompt = "" # clear test session prompt 
+    st.session_state.lab_msg_list=[] # clear test chat history
+    st.session_state.lab_msg_prompt = "" # clear test session prompt
 
 def handler_lab_step_two_confirm():
     if "lab_bot" not in st.session_state:
@@ -430,8 +427,8 @@ def handler_lab_step_two_confirm():
 
     if "lab_bot" in st.session_state:
         st.session_state.lab_active_step = 3
-        st.session_state.lab_msg_list=[] # clear test chat history 
-        st.session_state.lab_msg_prompt = "" # clear test session prompt 
+        st.session_state.lab_msg_list=[] # clear test chat history
+        st.session_state.lab_msg_prompt = "" # clear test session prompt
 
 def handler_lab_step_three_confirm():
 
@@ -444,61 +441,52 @@ def handler_lab_step_three_confirm():
         'session_type':selected_enum.value,
         'description': st.session_state.lab_bot_description,
         'summary_prompt_msg': st.session_state.lab_prompt_summary,
-        'is_active': True  
+        'is_active': True
     })
 
     bot_dict = st.session_state.lab_bot
     bot_id = b.create_bot(bot_config=bot_dict,user_id=st.session_state['user']['id'])
     if bot_id:
         st.balloons()
-        st.session_state.lab_active_step = 4  
+        st.session_state.lab_active_step = 4
         st.session_state.lab_bot_id=bot_id
     else:
         st.warning("Something went wrong. Please try again.")
 
 
+@vutil.handle_session_errors(cleanup_keys=LAB_CLEANUP_KEYS, on_error_callback=_on_lab_error)
 def handler_user_chat():
     user_message = st.session_state.lab_user_chat_input
     st.session_state.lab_msg_list.append({"message":user_message.replace("\n", "  \n"), "is_user": True})
 
     s = asessions.sessions(user_hash=st.session_state['user']['user_hash'])
-    try:
-        session_response = s.get_session_response(session_id=st.session_state.lab_session_id, oai_api_key=st.session_state.user['api_key'], user_message=user_message)
-        if session_response:
-            if session_response['user_message_flagged'] == True:
-                flagged_categories_str = ", ".join(session_response['user_message_flagged_categories'])
-                st.warning(f"Your most recent chat message was flagged by OpenAI's content moderation endpoint for: {flagged_categories_str}")
-            st.session_state.lab_msg_list.append({"message":session_response['bot_message'], "is_user": False})
-
-    except s.OpenAIError as e: 
-        st.session_state.lab_active_step = 1
-        del st.session_state['lab_bot']
-        st.error(f"{e}")
-    except (s.BadRequest, s.SessionNotRecorded, s.MessageNotRecorded, s.PromptNotRecorded, Exception) as e:
-        st.session_state.lab_active_step = 1
-        del st.session_state['lab_bot']
-        st.error("Something went wrong. Could not get AI response. Please try again later.")
+    session_response = s.get_session_response(session_id=st.session_state.lab_session_id, oai_api_key=st.session_state.user['api_key'], user_message=user_message)
+    if session_response:
+        if session_response['user_message_flagged'] == True:
+            flagged_categories_str = ", ".join(session_response['user_message_flagged_categories'])
+            st.warning(f"Your most recent chat message was flagged by OpenAI's content moderation endpoint for: {flagged_categories_str}")
+        st.session_state.lab_msg_list.append({"message":session_response['bot_message'], "is_user": False})
 
 
-button_enabled = True 
+button_enabled = True
 
 if 'lab_active_step' not in st.session_state:
     st.session_state.lab_active_step = 1
 
-# used to store test chat session messages 
+# used to store test chat session messages
 if 'lab_msg_list' not in st.session_state:
     st.session_state.lab_msg_list = []
 
 if 'lab_bot_id' not in st.session_state:
-    st.session_state.lab_bot_id = None 
+    st.session_state.lab_bot_id = None
 
 if 'user' not in st.session_state or st.session_state.user['id'] is None:
     render_lab_login()
 else:
-    button_enabled = False 
+    button_enabled = False
 
     if st.session_state.lab_active_step == 1:
-        # overwrite the model list based on models that user's API key has access to 
+        # overwrite the model list based on models that user's API key has access to
         ai_models_list = st.session_state.user['key_supported_models_list']
         render_lab_step_one()
     elif st.session_state.lab_active_step == 2:
