@@ -3,14 +3,13 @@ import streamlit as st
 import api_util_general as gu
 import time
 import logging
+from exceptions import OpenAIError, BadRequestError
 
 
 class open_ai:
 
-    class OpenAIError(Exception):
-        def __init__(self, message, error_type=None):
-            super().__init__(message)
-            self.error_type = error_type
+    # Keep inner class for backward compatibility during transition
+    OpenAIError = OpenAIError
 
     def __init__(self, api_key, restart_sequence, stop_sequence):
         self.api_key = api_key
@@ -42,70 +41,56 @@ class open_ai:
                     backoff *= 2
                     tries +=1
                 else:
-                    raise self.OpenAIError(f"OpenAI: {str(e)}", error_type=type(e).__name__) from e
+                    raise OpenAIError(f"OpenAI: {str(e)}", error_type=type(e).__name__) from e
 
     def get_ai_response(self, session_type, model_config_dict, init_prompt_msg, summary_prompt_msg, messages):
         """Main function to get an AI chat response. It also condenses the message chain accordingly"""
+        ai_response = self._get_ai_response(model_config_dict=model_config_dict, init_prompt_msg=init_prompt_msg, messages=messages)
 
-        try:
-            ai_response = self._get_ai_response(model_config_dict=model_config_dict, init_prompt_msg=init_prompt_msg, messages=messages)
-            # brain storming
-            if session_type == 2:
-                condensed_response = self._condense_brainstorming_session(messages=ai_response['messages'])
+        # brain storming
+        if session_type == 2:
+            condensed_response = self._condense_brainstorming_session(messages=ai_response['messages'])
 
-            # coaching session
-            if session_type == 3:
-                condensed_response = self._condense_coaching_session(
-                    total_token_count=ai_response['total_tokens']
-                    , messages=ai_response['messages']
-                    , model_config_dict = model_config_dict
-                    , init_prompt_msg=init_prompt_msg
-                    , summary_prompt_msg=summary_prompt_msg
-                )
+        # coaching session
+        if session_type == 3:
+            condensed_response = self._condense_coaching_session(
+                total_token_count=ai_response['total_tokens']
+                , messages=ai_response['messages']
+                , model_config_dict = model_config_dict
+                , init_prompt_msg=init_prompt_msg
+                , summary_prompt_msg=summary_prompt_msg
+            )
 
-            return {
-                'messages': condensed_response['messages'],
-                'messages_condensed':condensed_response['messages_condensed'],
-                'prompt_injection_detected':ai_response['prompt_injection_detected']
-            }
-        except Exception as e:
-            raise
+        return {
+            'messages': condensed_response['messages'],
+            'messages_condensed':condensed_response['messages_condensed'],
+            'prompt_injection_detected':ai_response['prompt_injection_detected']
+        }
 
 
     def validate_key(self):
         """Main function to validate an OpenAI key, by making a free content moderation call"""
-        try:
-            models = self._get_models()
-            models_list = [model.id for model in models.data]
-            gpt_lab_models_list = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4-32k','gpt-4','gpt-3.5-turbo-16k', 'gpt-3.5-turbo']
-            key_supported_models_list = [model for model in gpt_lab_models_list if model in models_list]
-            return {'validated': True, 'supported_models_list': key_supported_models_list}
-        except Exception as e:
-            raise
+        models = self._get_models()
+        models_list = [model.id for model in models.data]
+        gpt_lab_models_list = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4-32k','gpt-4','gpt-3.5-turbo-16k', 'gpt-3.5-turbo']
+        key_supported_models_list = [model for model in gpt_lab_models_list if model in models_list]
+        return {'validated': True, 'supported_models_list': key_supported_models_list}
 
 
     def get_moderation(self, user_message):
         """Main function to get moderation on a user message"""
-        try:
-            moderation = self._invoke_call(
-                lambda: self.client.moderations.create(input=user_message)
-            )
-            moderation_result = moderation.results[0]
-            flagged_categories = [category for category, value in moderation_result.categories.model_dump().items() if value]
+        moderation = self._invoke_call(
+            lambda: self.client.moderations.create(input=user_message)
+        )
+        moderation_result = moderation.results[0]
+        flagged_categories = [category for category, value in moderation_result.categories.model_dump().items() if value]
 
-            return {'flagged': moderation_result.flagged, 'flagged_categories':flagged_categories}
-        except Exception as e:
-            raise
-
+        return {'flagged': moderation_result.flagged, 'flagged_categories':flagged_categories}
 
 
     # get OpenAI models -- mainly used to validate the key
     def _get_models(self):
-        try:
-            return self._invoke_call(lambda: self.client.models.list())
-        except Exception as e:
-            raise
-
+        return self._invoke_call(lambda: self.client.models.list())
 
 
     def _condense_brainstorming_session(self, messages):
@@ -136,13 +121,10 @@ class open_ai:
 
         if total_token_count >= 0.6 * model_token_max:
             summary_messages = messages + [{'role':'user', 'message':summary_prompt_msg, 'current_date':gu.get_current_time()}]
-            try:
-                bot_messages = self._get_ai_response(model_config_dict=model_config_dict, init_prompt_msg=init_prompt_msg, messages=summary_messages)
-                messages_condensed = 1
-                condensed_messages = [{'role':'assistant', 'message':bot_messages['messages'][-1]['message'],'current_date':gu.get_current_time()}]+messages[-4:]
-                messages = condensed_messages
-            except Exception as e:
-                raise
+            bot_messages = self._get_ai_response(model_config_dict=model_config_dict, init_prompt_msg=init_prompt_msg, messages=summary_messages)
+            messages_condensed = 1
+            condensed_messages = [{'role':'assistant', 'message':bot_messages['messages'][-1]['message'],'current_date':gu.get_current_time()}]+messages[-4:]
+            messages = condensed_messages
 
         return {'messages':messages, 'messages_condensed':messages_condensed}
 
@@ -157,12 +139,9 @@ class open_ai:
         prompt_injection_detected = 0
 
         # All models now use chat completions API
-        try:
-            response = self._get_chat_completion(model_config_dict, submit_messages)
-            bot_message = response.choices[0].message.content
-            total_tokens = response.usage.total_tokens
-        except Exception as e:
-            raise
+        response = self._get_chat_completion(model_config_dict, submit_messages)
+        bot_message = response.choices[0].message.content
+        total_tokens = response.usage.total_tokens
 
         sim_score = gu.get_cosine_similarity(init_prompt_msg, bot_message)
 
@@ -180,25 +159,21 @@ class open_ai:
         oai_messages = self._messages_to_oai_messages(messages)
 
         if model_config_validated:
-            try:
-                completions = self._invoke_call(
-                    lambda: self.client.chat.completions.create(
-                        model=model_config_dict['model'],
-                        messages=oai_messages,
-                        temperature=model_config_dict['temperature'],
-                        max_tokens=model_config_dict['max_tokens'],
-                        top_p=model_config_dict['top_p'],
-                        frequency_penalty=model_config_dict['frequency_penalty'],
-                        presence_penalty=model_config_dict['presence_penalty'],
-                        stop=[self.stop_sequence]
-                    )
+            completions = self._invoke_call(
+                lambda: self.client.chat.completions.create(
+                    model=model_config_dict['model'],
+                    messages=oai_messages,
+                    temperature=model_config_dict['temperature'],
+                    max_tokens=model_config_dict['max_tokens'],
+                    top_p=model_config_dict['top_p'],
+                    frequency_penalty=model_config_dict['frequency_penalty'],
+                    presence_penalty=model_config_dict['presence_penalty'],
+                    stop=[self.stop_sequence]
                 )
-                return completions
-            except Exception as e:
-                raise
+            )
+            return completions
         else:
-            if not model_config_validated:
-                raise self.ClientRequestError("Bad Requests. model_config_dict missing required fields")
+            raise BadRequestError("Bad Requests. model_config_dict missing required fields")
 
 
     # helper functions
@@ -207,7 +182,7 @@ class open_ai:
 
         for field in required_fields:
             if field not in model_config_dict:
-                raise self.ClientRequestError("Bad model configuration request")
+                raise BadRequestError("Bad model configuration request")
         return True
 
 
@@ -217,4 +192,3 @@ class open_ai:
             for message in messages:
                 oai_messages.append({'role':message['role'], 'content':message['message']})
         return oai_messages
-
