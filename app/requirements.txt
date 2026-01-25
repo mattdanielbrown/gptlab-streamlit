@@ -6,7 +6,7 @@ attrs==24.3.0
 blinker==1.9.0
 cachetools==5.5.1
 certifi==2026.1.4
-cffi==1.17.1
+cffi==2.0.0
 charset-normalizer==3.4.1
 click==8.3.1
 cryptography==46.0.3
@@ -45,7 +45,7 @@ pycparser==2.22
 pydeck==0.9.1
 Pygments==2.19.1
 Pympler==1.1
-pyrsistent==0.21.0
+pyrsistent==0.20.0
 python-dateutil==2.9.0.post0
 pytz==2024.2
 referencing==0.36.2
