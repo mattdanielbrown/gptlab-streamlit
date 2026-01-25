@@ -11,8 +11,8 @@ import logging
 import streamlit as st 
 
 
-# basic logging configuration 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+# basic logging configuration
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s [%(levelname)s] %(message)s')
 
 # general helper function 
 def generate_uuid():
